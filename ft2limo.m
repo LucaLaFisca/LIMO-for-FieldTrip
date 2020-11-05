@@ -5,7 +5,7 @@ PATH_TO_RAW_EEG             = 'D:\__EEG-data';
 PATH_TO_PROCESSED_EEG       = 'D:\__EEG-data\EEG_Erika_format\EEG';
 PATH_TO_ELEC                = 'C:\Users\luca-\OneDrive - UMONS\_PhD\_Data';
 PATH_TO_FIELDTRIP           = 'D:\FieldTrip';
-PATH_TO_LIMO                = 'C:\Users\luca-\OneDrive - UMONS\_PhD\_Matlab\3-Dynamic-Analysis\old_limo_tools';
+PATH_TO_LIMO                = 'C:\Users\luca-\OneDrive - UMONS\_PhD\_Matlab\3-Dynamic-Analysis\limo_tools';
 PATH_TO_ROOT                = 'D:\__EEG-data\BIDS_files';
 
 % specific variables
@@ -43,18 +43,15 @@ for subj_name = drange(subj)
     processed_eeg = load(fullfile(PATH_TO_PROCESSED_EEG,subj_name{1},processed_eeg_mat));
     processed_eeg = struct2cell(processed_eeg);
     processed_eeg = processed_eeg{1};
-    deriv_mat  = processed_eeg{1};
+%     processed_eeg = processed_eeg.(processed_eeg_mat(1:strfind(processed_eeg_mat,'.mat')-1)); %other way to extract the struct
     
-    model.cat_files{subj_ID,1} = ones(length(deriv_mat.trial),1);
-    for i = 2:length(processed_eeg)
-        tmp = processed_eeg{i};
-        for j = 1:length(tmp.trial)
-            deriv_mat.trial{end+1} = tmp.trial{j};
-            deriv_mat.time{end+1} = tmp.time{j};
-            deriv_mat.trialinfo(end+1) = tmp.trialinfo(j);
-            deriv_mat.sampleinfo(end+1,:) = tmp.sampleinfo(j,:);
-        end
-        model.cat_files{subj_ID,1} = [model.cat_files{subj_ID,1}; i*ones(length(tmp.trial),1)];
+    cfg = [];
+    deriv_mat = ft_appenddata(cfg,processed_eeg{:});
+    
+    model.cat_files{subj_ID,1} = [];
+    for i = 1:length(processed_eeg)
+        N = length(processed_eeg{i}.trial);
+        model.cat_files{subj_ID,1} = [model.cat_files{subj_ID,1}; i*ones(N,1)];
     end
     
     if subj_ID >= 10
@@ -164,25 +161,35 @@ model.defaults.end = 0.5; %ending time in ms
 model.defaults.bootstrap = 0; %or 1
 model.defaults.tfce = 0; %or 1
 
-
-elec_neighb = elec_aligned;
+elec = load(fullfile(PATH_TO_ELEC,sprintf(subfolder, i),elec_mat),'-mat');
+elec = struct2cell(elec);
+elec = elec{1};
+elec_neighb = elec;
 elec_neighb.pnt = elec_neighb.chanpos;
-data_neighb = deriv_mat;
+data_neighb = elec;
 data_neighb.elec = elec_neighb;
 cfg = [];
 cfg.elec = elec_neighb;
 cfg.neighbourdist = 40; %defined in cm in limo_ft_neighbourselection
 [neighbours,channeighbstructmat] = limo_ft_neighbourselection(cfg,data_neighb);
+model.defaults.neighbouring_matrix = channeighbstructmat;
 
-model.defaults.neighbouring_matrix = template2neighbmat(PATH_TO_TEMPLATE_NEIGHBOURS,nb_elec); %neighbouring matrix use for clustering (necessary if bootstrap = 1)
+% model.defaults.neighbouring_matrix = template2neighbmat(PATH_TO_TEMPLATE_NEIGHBOURS,nb_elec); %neighbouring matrix use for clustering (necessary if bootstrap = 1)
 %neighbouring matrix format: [n_chan x n_chan] of 1/0 (neighbour or not)
 model.defaults.template_elec = ft_read_sens(PATH_TO_TEMPLATE_ELEC);
 
-contrast.mat = [1 0 0 0 -1 0 0 0 0;
-                0 1 0 0 0 -1 0 0 0;
-                0 0 1 0 -1 0 0 0 0;
-                0 0 0 1 0 -1 0 0 0];
+% contrast.mat = [1 0 0 0 -1 0 0 0 0;
+%                 0 1 0 0 0 -1 0 0 0;
+%                 0 0 1 0 -1 0 0 0 0;
+%                 0 0 0 1 0 -1 0 0 0];
 
+%t-test
+% contrast.mat = [1 0 1 0 1 0 1 0 0;
+%                 0 1 0 1 0 1 0 1 0];
+
+%1 sample t-test nat vs man and ANOVA semantic vs non-semantic and nat vs man
+contrast.mat = [1 -1 1 -1 1 -1 0 0 0];
+            
 save(fullfile(PATH_TO_DERIV,'model.mat'),'model')
 save(fullfile(PATH_TO_DERIV,'contrast.mat'),'contrast')
 
@@ -199,11 +206,24 @@ cd(PATH_TO_ROOT)
 %% call limo_random_select
 clc;
 LIMOfiles = fullfile(pwd,'Beta_files_GLM_OLS_Time_Channels.txt');
-% LIMOfiles = fullfile(pwd,'con1_files_GLM_OLS_Time_Channels.txt');
 
 %expected_chanlocs = mean chanlocs
 expected_chanlocs = limo_avg_expected_chanlocs(PATH_TO_DERIV, model.defaults);
 
+% LIMOPath = limo_random_select('Repeated Measures ANOVA',expected_chanlocs,'LIMOfiles',... 
+%     LIMOfiles,'analysis_type','Full scalp analysis','parameters',{[1 2],[3 4]},...
+%     'factor names',{'semantic_relation', 'type_of_object'},'type','Channels','nboot',1000,'tfce',1,'skip design check','yes');
+
+
 LIMOPath = limo_random_select('Repeated Measures ANOVA',expected_chanlocs,'LIMOfiles',... 
-    LIMOfiles,'analysis_type','Full scalp analysis','parameters',{[1 2],[3 4]},...
+    LIMOfiles,'analysis_type','Full scalp analysis','parameters',{[1 2],[5 6]},...
     'factor names',{'semantic_relation', 'type_of_object'},'type','Channels','nboot',1000,'tfce',1,'skip design check','yes');
+
+mkdir('one_sample_t_test')
+cd('one_sample_t_test')
+LIMOfiles = fullfile(pwd,'con1_files_GLM_OLS_Time_Channels.txt');
+
+LIMOPath = limo_random_select('one sample t-test',expected_chanlocs,'LIMOfiles',... 
+    LIMOfiles,'analysis_type','Full scalp analysis','parameters',{1},...
+    'type','Channels','nboot',1000,'tfce',1,'skip design check','yes');
+
