@@ -218,7 +218,7 @@ model.defaults.template_elec = elec;
 %1 sample t-test nat vs man and ANOVA semantic vs non-semantic and nat vs man
 % contrast.mat = [0 1 -1 1 -1 1 -1 0 0 0];
 contrast.mat = [0 1 -1 1 -1  1 -1 0 0 0;
-                0 1  1 1  1 -1 -1 0 0 0];
+                0 1  1 1  1 -2 -2 0 0 0];
             
 % save(fullfile(PATH_TO_DERIV,'model.mat'),'model')
 % save(fullfile(PATH_TO_DERIV,'contrast.mat'),'contrast')
@@ -296,8 +296,6 @@ cfg.rawtrial            = 'yes';
 cfg.keeptrials          = 'yes';
 source_dipole = ft_sourceanalysis(cfg, timelock);
 
-cfg=[];
-test = ft_appenddata(cfg,source_dipole)
 %% Compute ROI-by-ROI source activity and neighbouring matrix
 
 % subfolder = 'sub-0%d';
@@ -311,10 +309,15 @@ roi_mat = {[3,5];[4,6];[7,9];[8,10];[11,13,15];[12,14,16];61;62;63;64;65;66;67;6
 [roi_atlas] = select_roi(sourcemodel_atlas,roi_mat);
 
 source_roi = dipole2roi(source_dipole,roi_atlas);
-source_roi.trial = permute(source_roi.mom, [[1,2],3])
+% source_roi.trial = permute(source_roi.mom, [[1,2],3]);
 source_roi.trial = NaN(size(source_roi.mom,1)*size(source_roi.mom,2),size(source_roi.mom,3));
+tmp = [];
 for i = 1:size(source_roi.mom,2)
-    source_roi.trial = 
+    tmp = [tmp; i*ones(size(source_roi.mom,1),1)];
+    source_roi.trial(size(source_roi.mom,1)*(i-1)+1:size(source_roi.mom,1)*i,:) = squeeze(source_roi.mom(:,i,:));
+end
+
+model.cat{i} = tmp;
 
 neighbouring_matrix = source_neighbmat(roi_atlas);
 
