@@ -309,15 +309,21 @@ roi_mat = {[3,5];[4,6];[7,9];[8,10];[11,13,15];[12,14,16];61;62;63;64;65;66;67;6
 [roi_atlas] = select_roi(sourcemodel_atlas,roi_mat);
 
 source_roi = dipole2roi(source_dipole,roi_atlas);
-% source_roi.trial = permute(source_roi.mom, [[1,2],3]);
-source_roi.trial = NaN(size(source_roi.mom,1)*size(source_roi.mom,2),size(source_roi.mom,3));
+source_roi.trial = cell(1,size(source_roi.mom,2));
+
+model.set_files = {};
+model.cat_files = {};
+model.cont_files = {};
 tmp = [];
 for i = 1:size(source_roi.mom,2)
-    tmp = [tmp; i*ones(size(source_roi.mom,1),1)];
-    source_roi.trial(size(source_roi.mom,1)*(i-1)+1:size(source_roi.mom,1)*i,:) = squeeze(source_roi.mom(:,i,:));
+    tmp = [tmp; i];
+    source_roi.trial{i} = squeeze(source_roi.mom(:,i,:));
 end
-
-model.cat{i} = tmp;
+i=30;
+output_path = fullfile(PATH_TO_DERIV,sprintf(subfolder,i),'eeg',[sprintf(subfolder,i) '_task-' task_name '_source-roi.mat']);
+save(output_path,'source_roi')
+model.set_files{1} = output_path;
+model.cat_files{1} = tmp;
 
 neighbouring_matrix = source_neighbmat(roi_atlas);
 
@@ -345,6 +351,35 @@ end
 figure()
 imagesc(neighbouring_matrix)
 
+%% Model design
+model.defaults.type = 'Channels'; %or 'Components'
+model.defaults.analysis = 'Time'; %'Frequency' or 'Time-Frequency'
+model.defaults.method = 'OLS'; %'IRLS' 'WLS'
+model.defaults.type_of_analysis = 'Mass-univariate'; %or 'Multivariate'
+model.defaults.fullfactorial = 0; %or 1
+model.defaults.zscore = 0; %or 1
+model.defaults.start = -200; %starting time in ms
+model.defaults.end = 500; %ending time in ms
+model.defaults.bootstrap = 0; %or 1
+model.defaults.tfce = 0; %or 1
+
+model.defaults.neighbouring_matrix = neighbouring_matrix;
 %% Run limo_batch on sources
+% option = 'both';
+option = 'model specification';
+contrast.mat = [1 -1 1 -1  1 -1 0 0 0];
 
+cd(fullfile(PATH_TO_ROOT,'source'))
+% [LIMO_files, procstatus] = limo_batch(option,model,contrast);
+[LIMO_files, procstatus] = limo_batch(option,model);
 
+%% Display results
+region = 7;
+figure;
+hold on
+for i = 1:size(Betas,3)
+    plot(source_roi.time(154:513),Betas(region,:,i),'LineWidth',2)
+%     plot(source_roi.time(154:513),source_roi.trial{i}(region,154:513),'LineWidth',2)
+end
+title(sprintf('region: %s',source_roi.label{region}))
+legend
