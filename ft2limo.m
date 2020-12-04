@@ -6,6 +6,8 @@ PATH_TO_PROCESSED_EEG       = 'D:\__EEG-data\EEG_Erika_format\EEG';
 PATH_TO_ELEC                = 'C:\Users\luca-\OneDrive - UMONS\_PhD\_Data';
 PATH_TO_FIELDTRIP           = 'D:\FieldTrip';
 PATH_TO_LIMO                = 'C:\Users\luca-\OneDrive - UMONS\_PhD\_Matlab\3-Dynamic-Analysis\limo_tools';
+PATH_TO_FT2LIMO             = 'C:\Users\luca-\OneDrive - UMONS\_PhD\_Matlab\3-Dynamic-Analysis\LIMO-for-FieldTrip';
+PATH_TO_CUSTOM_FUNCTIONS    = 'C:\Users\luca-\OneDrive - UMONS\_PhD\_Matlab\0-General-Pipeline\EEG-Source-Analysis-Pipeline';
 PATH_TO_ROOT                = 'D:\__EEG-data\BIDS_files';
 
 % specific variables
@@ -32,6 +34,9 @@ addpath(PATH_TO_FIELDTRIP)
 addpath(PATH_TO_LIMO)
 addpath(genpath(fullfile(PATH_TO_LIMO,'external')))
 addpath(genpath(fullfile(PATH_TO_LIMO,'limo_cluster_functions')))
+addpath(PATH_TO_FT2LIMO)
+addpath(PATH_TO_CUSTOM_FUNCTIONS)
+
 
 %% (DATA SPECIFIC) Create derivatives files and set model.cat_files
 dinfo = dir(fullfile(PATH_TO_PROCESSED_EEG,processed_eeg_common_name));
@@ -145,10 +150,7 @@ dinfo = dir(fullfile(PATH_TO_DERIV,'sub-*'));
 model.set_files = {};
 model.cat_files = {};
 model.cont_files = {};
-for i = 1 : numel( dinfo )
-    if i > 10
-        break;
-    end
+for i = numel( dinfo ):-1:1
     if i >= 10
         subfolder = 'sub-0%d';
     else
@@ -159,22 +161,23 @@ for i = 1 : numel( dinfo )
     eeg = struct2cell(eeg);
     eeg = eeg{1};
     model.cat_files{i,1} = eeg.trialinfo.condition;
-    model.cat_files{i,1}(isnan(model.cat_files{i,1})) = 0;
+    model.cat_files{i,1}(model.cat_files{i,1}==0) = NaN;
     fields = eeg.trialinfo.Properties.VariableNames;
-    fields = fields(5:end);
+    fields = fields(4:end);
     cont = [];
     for f = fields
         tmp = eeg.trialinfo.(f{1});
         cont = [cont,limo_split_continuous(model.cat_files{i,1},tmp)];
     end
+    for j = 1:size(cont,2)
+        idx = find(isnan(cont(:,j)));
+        for row = idx'
+            if ~all(isnan(cont(row,:)))
+                cont(row,j) = 0;
+            end
+        end
+    end
     model.cont_files{i,1} = cont;
-    model.cont_files{i,1}(isnan(model.cont_files{i,1})) = 0;
-%     model.cat_files{i,1}(isnan(model.cat_files{i,1})) = 0;
-%     model.set_files{1,1} = fullfile(PATH_TO_DERIV,sprintf(subfolder,i),'eeg',[sprintf(subfolder,i) '_task-' task_name '_eeg.mat']);
-%     eeg = load(model.set_files{1,1});
-%     eeg = struct2cell(eeg);
-%     eeg = eeg{1};
-%     model.cat_files{1,1} = eeg.trialinfo.condition;
 end
 % model.defaults: specifiy the parameters to use for each subject
 model.defaults.type = 'Channels'; %or 'Components'
@@ -188,12 +191,12 @@ model.defaults.end = 500; %ending time in ms
 model.defaults.bootstrap = 0; %or 1
 model.defaults.tfce = 0; %or 1
 
-elec = load(fullfile(PATH_TO_ELEC,sprintf(subfolder, i),elec_mat),'-mat');
-elec = struct2cell(elec);
-elec = elec{1};
-elec_neighb = elec;
+% elec = load(fullfile(PATH_TO_ELEC,sprintf(subfolder, i),elec_mat),'-mat');
+% elec = struct2cell(elec);
+% elec = elec{1};
+elec_neighb = eeg.elec;
 elec_neighb.pnt = elec_neighb.chanpos;
-data_neighb = elec;
+data_neighb = eeg;
 data_neighb.elec = elec_neighb;
 cfg = [];
 cfg.elec = elec_neighb;
@@ -204,7 +207,7 @@ model.defaults.neighbouring_matrix = channeighbstructmat;
 % model.defaults.neighbouring_matrix = template2neighbmat(PATH_TO_TEMPLATE_NEIGHBOURS,nb_elec); %neighbouring matrix use for clustering (necessary if bootstrap = 1)
 %neighbouring matrix format: [n_chan x n_chan] of 1/0 (neighbour or not)
 % model.defaults.template_elec = ft_read_sens(PATH_TO_TEMPLATE_ELEC);
-model.defaults.template_elec = elec;
+model.defaults.template_elec = eeg.elec;
 
 % contrast.mat = [1 0 0 0 -1 0 0 0 0;
 %                 0 1 0 0 0 -1 0 0 0;
@@ -217,8 +220,8 @@ model.defaults.template_elec = elec;
 
 %1 sample t-test nat vs man and ANOVA semantic vs non-semantic and nat vs man
 % contrast.mat = [0 1 -1 1 -1 1 -1 0 0 0];
-contrast.mat = [0 1 -1 1 -1  1 -1 0 0 0;
-                0 1  1 1  1 -2 -2 0 0 0];
+contrast.mat = [1 -1 1 -1  1 -1 0 0 0;
+                1  1 1  1 -2 -2 0 0 0];
             
 % save(fullfile(PATH_TO_DERIV,'model.mat'),'model')
 % save(fullfile(PATH_TO_DERIV,'contrast.mat'),'contrast')
@@ -248,84 +251,117 @@ expected_chanlocs = limo_avg_expected_chanlocs(PATH_TO_DERIV, model.defaults);
 
 LIMOPath = limo_random_select('Repeated Measures ANOVA',expected_chanlocs,'LIMOfiles',... 
     LIMOfiles,'analysis_type','Full scalp analysis','parameters',{[1 2],[5 6]},...
-    'factor names',{'semantic_relation', 'type_of_object'},'type','Channels','nboot',1000,'tfce',1,'skip design check','yes');
+    'factor names',{'semantic_relation', 'type_of_object'},'type','Channels','nboot',100,'tfce',1,'skip design check','yes');
 
 if ~exist('one_sample_t_test','dir')
     mkdir('one_sample_t_test')
 end
-LIMOfiles = fullfile(pwd,'con1_files_GLM_OLS_Time_Channels.txt');
-cd('one_sample_t_test')
+
+cd(PATH_TO_ROOT)
+my_con = 'con1';
+LIMOfiles = fullfile(pwd,sprintf('%s_files_GLM_OLS_Time_Channels.txt',my_con));
+cd(sprintf('one_sample_t_test_%s',my_con))
 
 LIMOPath = limo_random_select('one sample t-test',expected_chanlocs,'LIMOfiles',... 
     LIMOfiles,'analysis_type','Full scalp analysis','parameters',{1},...
-    'type','Channels','nboot',1000,'tfce',1,'skip design check','yes');
+    'type','Channels','nboot',100,'tfce',1,'skip design check','yes');
 
+%% display results
 
+load(fullfile(LIMOPath{1},'LIMO.mat'))
+limo_review(LIMO)
+test = LIMO;
+test.design.weights = zeros(size(LIMO.design.weights));
+test.design.weights(:,LIMO.design.X(:,1)==1) = 1;
+test.design.weights(:,LIMO.design.X(:,2)==1) = 1;
+% imagesc(test.design.weights)
+
+limo_semi_partial_coef(test); %output dim: channel*time*(R2,F-value,p-value)
+
+figure
+% hold on
+test = squeeze(semi_partial_coef(:,:,2));
+plot(LIMO.data.timevect,test')
+[~,idx] = min(abs(LIMO.data.timevect-41.75));
+[~,idx] = min(test(:,idx))
+figure;plot(LIMO.data.timevect,test(idx,:)')
+
+%7 at 248.8; 60 at 41.75; 49 at 412.8
 
 %% Source analysis
+PATH_TO_SOURCE = 'D:\__EEG-data\BIDS_source';
 
-%% Compute source for each condition
-subfolder = 'sub-0%d';
-i = 30; %subject ID
-eeg = load(fullfile(PATH_TO_DERIV,sprintf(subfolder,i),'eeg',[sprintf(subfolder,i) '_task-' task_name '_eeg.mat']));
-eeg = struct2cell(eeg);
-eeg = eeg{1};
+%% Compute source ROI activity for each condition
+% subfolder = 'sub-0%d';
+% i = 30; %subject ID
+% eeg = load(fullfile(PATH_TO_DERIV,sprintf(subfolder,i),'eeg',[sprintf(subfolder,i) '_task-' task_name '_eeg.mat']));
+% eeg = struct2cell(eeg);
+% eeg = eeg{1};
 
-timelock = cell(1,max(eeg.trialinfo.condition));
-for i = 1:max(eeg.trialinfo.condition)
+conditions = unique(eeg.trialinfo.condition);
+nb_conditions = nnz(conditions(~isnan(conditions)));
+source_all_cond = cell(1,nb_conditions);
+
+% select target ROIs
+roi_mat = {[3,5];[4,6];[7,9];[8,10];[11,13,15];[12,14,16];61;62;63;64;65;66;67;68;31;32;[83,87];[84,88];85;86;[45,49,51,53];[46,50,52,54]};
+[roi_atlas] = select_roi(sourcemodel_atlas,roi_mat);
+
+for i = 1:nb_conditions
     cfg = [];
-    cfg.trials = find(eeg.trialinfo.condition==i)';
-    cfg.covariance = 'yes';
-    timelock{i} = ft_timelockanalysis(cfg, eeg);
+    cfg.trials = find(eeg.trialinfo.condition == i)';
+    eeg_single_cond = ft_preprocessing(cfg,eeg);
+
+    cfg                     = [];
+    cfg.method              = 'mne';                    %specify minimum norm estimate as method
+    cfg.sourcemodel         = sourcemodel_and_leadfield;%the precomputed leadfield
+    cfg.headmodel           = vol;                      %the head model
+    cfg.elec                = eeg.elec;                 %the electrodes
+    cfg.channel             = eeg.label;                %the useful channels
+    cfg.mne.prewhiten       = 'yes';                    %prewhiten data
+    cfg.mne.lambda          = 0.01;                     %regularisation parameter
+%     cfg.mne.scalesourcecov  = 'yes';                    %scaling the source covariance matrix
+    cfg.rawtrial            = 'yes';
+    cfg.keeptrials          = 'yes';
+    source_dipole = ft_sourceanalysis(cfg, eeg_single_cond);
+    
+    % Compute ROI-by-ROI source activity
+    source_roi = dipole2roi(source_dipole,roi_atlas);
+    source_all_cond{i} = source_roi;
 end
 
-cfg = [];
-timelock = ft_appenddata(cfg,timelock{:});
+% Concatenate ROI activity of all the conditions
+cfg            = [];
+cfg.parameter  = 'mom';
+source_roi = ft_appendsource(cfg,source_all_cond{:});
 
-cfg                     = [];
-cfg.method              = 'mne';                    %specify minimum norm estimate as method
-% cfg.latency             = 0.025;                    %latency of interest
-cfg.sourcemodel         = sourcemodel_and_leadfield;%the precomputed leadfield
-cfg.headmodel           = vol;                      %the head model
-cfg.elec                = elec_aligned;                 %the electrodes
-cfg.channel             = elec_aligned.label(1:64);           %the useful channels
-cfg.mne.prewhiten       = 'yes';                    %prewhiten data
-cfg.mne.lambda          = 0.01;                     %regularisation parameter
-cfg.mne.scalesourcecov  = 'yes';                    %scaling the source covariance matrix
-cfg.rawtrial            = 'yes';
-cfg.keeptrials          = 'yes';
-source_dipole = ft_sourceanalysis(cfg, timelock);
+% Add label and trial fields (required for LIMO) and save
+source_roi.label = source_all_cond{1}.label;
+R = ones(1,size(source_roi.mom,1));
+source_roi.trial = (mat2cell(source_roi.mom,R))';
+source_roi.trial = cellfun(@(x) reshape(x,[],size(source_roi.mom,3)),source_roi.trial,'un',0);
 
-%% Compute ROI-by-ROI source activity and neighbouring matrix
+subfolder = 'sub-0%d';
+i=30;
+output_path = fullfile(PATH_TO_SOURCE,'derivatives',sprintf(subfolder,i),'eeg',[sprintf(subfolder,i) '_task-' task_name '_source-roi.mat']);
+save(output_path,'source_roi')
 
+%% Set the model and compute the neighbouring matrix
 % subfolder = 'sub-0%d';
 % i = 30; %subject ID
 % source_dipole = load(fullfile(PATH_TO_DERIV,sprintf(subfolder,i),'eeg',[sprintf(subfolder,i) '_task-' task_name '_source.mat']));
 % source_dipole = struct2cell(source_dipole);
 % source_dipole = source_dipole{1};
 
-% select target ROIs
-roi_mat = {[3,5];[4,6];[7,9];[8,10];[11,13,15];[12,14,16];61;62;63;64;65;66;67;68;31;32;[83,87];[84,88];85;86};
-[roi_atlas] = select_roi(sourcemodel_atlas,roi_mat);
-
-source_roi = dipole2roi(source_dipole,roi_atlas);
-source_roi.trial = cell(1,size(source_roi.mom,2));
-
-model.set_files = {};
+model.set_files{1} = output_path;
 model.cat_files = {};
 model.cont_files = {};
 tmp = [];
-for i = 1:size(source_roi.mom,2)
-    tmp = [tmp; i];
-    source_roi.trial{i} = squeeze(source_roi.mom(:,i,:));
+for i = 1:nb_conditions
+    tmp = [tmp; i*ones(nnz(eeg.trialinfo.condition==i),1)];
 end
-i=30;
-output_path = fullfile(PATH_TO_DERIV,sprintf(subfolder,i),'eeg',[sprintf(subfolder,i) '_task-' task_name '_source-roi.mat']);
-save(output_path,'source_roi')
-model.set_files{1} = output_path;
 model.cat_files{1} = tmp;
 
-neighbouring_matrix = source_neighbmat(roi_atlas);
+neighbouring_matrix = source_neighbmat(roi_atlas,0);
 
 %% (DATA SPECIFIC) neighbourhood correction following regions properties
 for i = 1:length(neighbouring_matrix)
@@ -365,21 +401,66 @@ model.defaults.tfce = 0; %or 1
 
 model.defaults.neighbouring_matrix = neighbouring_matrix;
 %% Run limo_batch on sources
-% option = 'both';
-option = 'model specification';
-contrast.mat = [1 -1 1 -1  1 -1 0 0 0];
+option = 'both';
+% option = 'model specification';
+% contrast.mat = [1 -1 1 -1  1 -1 0 0 0];
+contrast.mat = [1 -1 1 -1  1 -1 0 0 0;
+                1  1 1  1 -2 -2 0 0 0];
 
-cd(fullfile(PATH_TO_ROOT,'source'))
-% [LIMO_files, procstatus] = limo_batch(option,model,contrast);
-[LIMO_files, procstatus] = limo_batch(option,model);
+cd(PATH_TO_SOURCE)
+[LIMO_files, procstatus] = limo_batch(option,model,contrast);
+% [LIMO_files, procstatus] = limo_batch(option,model);
 
 %% Display results
-region = 7;
-figure;
+load(LIMO_files.mat{1})
+load(LIMO_files.Beta{1})
+my_con = 2;
+load(LIMO_files.con{1}{my_con})
+% close all
+% region = 7;
+% tmp = squeeze(Betas(region,:,:));
+tmp = squeeze(con(:,:,1));
+% tmp = (tmp-mean(tmp,2))./std(tmp')';
+tmp = zscore(tmp,[],2);
+for i = 1:size(tmp,1)
+    tmp(i,:) = smooth(tmp(i,:),10);
+end
+
+figure
 hold on
-for i = 1:size(Betas,3)
-    plot(source_roi.time(154:513),Betas(region,:,i),'LineWidth',2)
+my_legend = [];
+% for i = 1:size(tmp,1)
+% for i = 1:2:size(tmp,1) %left hemisphere
+for i = 2:2:size(tmp,1) %right hemisphere
+% for i = [1,3,4,6,7,9,12,13,14,15,16,17,18,19,22]
+% for i = [22,19,18,17,15,14,13,7,1]
+%     figure
+%     plot(LIMO.data.timevect,tmp(:,[1:i-1, i+1:end]),'LineWidth',1)
+%     hold on
+    plot(LIMO.data.timevect,tmp(i,:),'LineWidth',2)
+%     hold on
+%     line(LIMO.data.timevect,zeros(1,length(LIMO.data.timevect)),'LineWidth',2,'Color','black')
+    region = strrep(LIMO.data.chanlocs(i).labels,'_','-');
+    my_legend = [my_legend; {region}];
+%     title(sprintf('Trimmed Mean Difference\nRegion: %s', region))
+%     pause()
+%     close all
+%     plot(source_roi.time(154:513),Betas(region,:,i),'LineWidth',2)
 %     plot(source_roi.time(154:513),source_roi.trial{i}(region,154:513),'LineWidth',2)
 end
-title(sprintf('region: %s',source_roi.label{region}))
-legend
+line(LIMO.data.timevect,zeros(1,length(LIMO.data.timevect)),'LineWidth',2,'Color','black')
+grid on
+lgd = legend(my_legend);
+lgd.FontSize = 7;
+% title(sprintf('Trimmed Mean Difference\nNatural vs. Manufactured'))
+title(sprintf('Trimmed Mean Difference\nSemantic vs. Non-semantic'))
+xlabel('time (ms)')
+ylabel('Amplitude (z-score)')
+
+% plot(source_roi.time(154:513),squeeze(Betas(region,:,:)),'LineWidth',2)
+% title(sprintf('region: %s',source_roi.label{region}))
+% legend
+% figure;
+% plot(LIMO.data.timevect,tmp(:,1),'LineWidth',2)
+% grid on
+% title('Trimmed Mean Difference')
