@@ -1,4 +1,9 @@
-function [neighbouring_matrix] = source_neighbmat(sourcemodel_atlas)
+function [neighbouring_matrix] = source_neighbmat(sourcemodel_atlas,to_disp)
+
+if nargin == 1
+    to_disp = 1;
+end
+
 dipole_pos = sourcemodel_atlas.pos;
 dist = sqrt(sum(diff(dipole_pos).^2,2));
 thresh = median(dist); %the threshold is defined as the median distance between 2 following vertices
@@ -19,8 +24,12 @@ for i = 1:length(dipole_pos)
         end
     end
 end
-figure()
-imagesc(neighbouring_matrix)
-title('Neighbouring matrix')
-xlabel('region index')
-ylabel('region index')
+
+if to_disp
+    figure()
+    imagesc(neighbouring_matrix)
+    title('Neighbouring matrix')
+    xlabel('region index')
+    ylabel('region index')
+end
+end
