@@ -158,15 +158,18 @@ for i = numel( dinfo ):-1:1
     end
     model.set_files{i,1} = fullfile(PATH_TO_DERIV,sprintf(subfolder,i),'eeg',[sprintf(subfolder,i) '_task-' task_name '_eeg.mat']);
     eeg = load(model.set_files{i,1});
-    eeg = struct2cell(eeg);
-    eeg = eeg{1};
+    eeg = eeg.(cell2mat(fieldnames(eeg)));
+    regressors = load(fullfile(PATH_TO_DERIV,sprintf(subfolder,i),'eeg','combined_trialinfo.mat'));
+    regressors = regressors.(cell2mat(fieldnames(regressors)));
     model.cat_files{i,1} = eeg.trialinfo.condition;
-    model.cat_files{i,1}(model.cat_files{i,1}==0) = NaN;
-    fields = eeg.trialinfo.Properties.VariableNames;
+%     model.cat_files{i,1}(model.cat_files{i,1}==0) = NaN;
+    model.cat_files{i,1}(isnan(model.cat_files{i,1})) = 0;
+    fields = regressors.Properties.VariableNames;
     fields = fields(4:end);
+    % note: we combined complexity, imageability and concreteness (pca)
     cont = [];
     for f = fields
-        tmp = eeg.trialinfo.(f{1});
+        tmp = regressors.(f{1});
         cont = [cont,limo_split_continuous(model.cat_files{i,1},tmp)];
     end
     for j = 1:size(cont,2)
@@ -177,13 +180,14 @@ for i = numel( dinfo ):-1:1
             end
         end
     end
+    cont(isnan(cont)) = 0;
     model.cont_files{i,1} = cont;
 end
 % model.defaults: specifiy the parameters to use for each subject
 model.defaults.type = 'Channels'; %or 'Components'
 model.defaults.analysis = 'Time'; %'Frequency' or 'Time-Frequency'
 model.defaults.method = 'OLS'; %'IRLS' 'WLS'
-model.defaults.type_of_analysis = 'Mass-univariate'; %or 'Multivariate'
+model.defaults.type_of_analysis = 'Multivariate'; %or 'Mass-univariate'
 model.defaults.fullfactorial = 0; %or 1
 model.defaults.zscore = 0; %or 1
 model.defaults.start = -200; %starting time in ms
@@ -223,19 +227,27 @@ model.defaults.template_elec = eeg.elec;
 contrast.mat = [1 -1 1 -1  1 -1 0 0 0;
                 1  1 1  1 -2 -2 0 0 0];
             
-% save(fullfile(PATH_TO_DERIV,'model.mat'),'model')
+% save(fullfile(PATH_TO_DERIV,'new_regressed_model.mat'),'model')
 % save(fullfile(PATH_TO_DERIV,'contrast.mat'),'contrast')
 
 % %uncomment if you want to load an existing model/contrast
 % model = load(fullfile(PATH_TO_DERIV,'model.mat'));
+% model = load(fullfile(PATH_TO_DERIV,'regressed_model.mat'));
 % model = model.model;
 % contrast = load(fullfile(PATH_TO_DERIV,'contrast.mat'));
 % contrast = contrast.contrast;
 
-cd(PATH_TO_ROOT)
-[LIMO_files, procstatus] = limo_batch(option,model,contrast);
-% option = 'model specification';
-% [LIMO_files, procstatus] = limo_batch(option,model);
+% cd(PATH_TO_ROOT)
+% [LIMO_files, procstatus] = limo_batch(option,model,contrast);
+option = 'model specification';
+[LIMO_files, procstatus] = limo_batch(option,model);
+% option = 'contrast only';
+% [LIMO_files, procstatus] = limo_batch(option,model,contrast);
+
+
+% ft_plot_mesh(vol,'facealpha',0.5)
+% hold on
+% scatter3(eeg.elec.elecpos(1:32,1),eeg.elec.elecpos(1:32,2),eeg.elec.elecpos(1:32,3),500,'g','filled')
 
 %% call limo_random_select
 clc;
@@ -248,45 +260,97 @@ expected_chanlocs = limo_avg_expected_chanlocs(PATH_TO_DERIV, model.defaults);
 %     LIMOfiles,'analysis_type','Full scalp analysis','parameters',{[1 2],[3 4]},...
 %     'factor names',{'semantic_relation', 'type_of_object'},'type','Channels','nboot',1000,'tfce',1,'skip design check','yes');
 
+%Anova
+cd(PATH_TO_ROOT)
+LIMOfiles = fullfile(pwd,'simple_Beta_files_GLM_OLS_Time_Channels.txt');
+if ~exist('simple_anova','dir')
+    mkdir('simple_anova')
+end
+cd('simple_anova')
+
+if ~exist('test_anova','dir')
+    mkdir('test_anova')
+end
+cd('test_anova')
+
+% LIMOfiles = fullfile(pwd,'regressed_Beta_files_GLM_OLS_Time_Channels.txt');
+% if ~exist('regressed_anova','dir')
+%     mkdir('regressed_anova')
+% end
+% cd('regressed_anova')
 
 LIMOPath = limo_random_select('Repeated Measures ANOVA',expected_chanlocs,'LIMOfiles',... 
     LIMOfiles,'analysis_type','Full scalp analysis','parameters',{[1 2],[5 6]},...
     'factor names',{'semantic_relation', 'type_of_object'},'type','Channels','nboot',100,'tfce',1,'skip design check','yes');
 
-if ~exist('one_sample_t_test','dir')
-    mkdir('one_sample_t_test')
-end
-
+%one sample t-test
 cd(PATH_TO_ROOT)
-my_con = 'con1';
+my_con = 'con2';
 LIMOfiles = fullfile(pwd,sprintf('%s_files_GLM_OLS_Time_Channels.txt',my_con));
+if ~exist(['one_sample_t_test_' my_con],'dir')
+    mkdir(['one_sample_t_test_' my_con])
+end
 cd(sprintf('one_sample_t_test_%s',my_con))
 
 LIMOPath = limo_random_select('one sample t-test',expected_chanlocs,'LIMOfiles',... 
     LIMOfiles,'analysis_type','Full scalp analysis','parameters',{1},...
     'type','Channels','nboot',100,'tfce',1,'skip design check','yes');
 
+%paired t-test
+cd(PATH_TO_ROOT)
+my_con = 'con1';
+LIMOfiles = {fullfile(pwd,sprintf('%s_files_GLM_OLS_Time_Channels.txt','Beta')); fullfile(pwd,sprintf('%s_files_GLM_OLS_Time_Channels_regressed.txt','Beta'))};
+if ~exist(['paired_t_test_' my_con],'dir')
+    mkdir(['paired_t_test_' my_con])
+end
+cd(sprintf('paired_t_test_%s',my_con))
+
+% LIMOPath = limo_random_select('paired t-test',expected_chanlocs,'LIMOfiles',... 
+%     LIMOfiles,'analysis_type','Full scalp analysis','parameters',{[1:2]},...
+%     'type','Channels','nboot',100,'tfce',1,'skip design check','yes');
+LIMOPath = limo_random_select('paired t-test',expected_chanlocs,'LIMOfiles',... 
+    LIMOfiles,'analysis_type','Full scalp analysis',...
+    'type','Channels','nboot',100,'tfce',1,'skip design check','yes');
 %% display results
 
-load(fullfile(LIMOPath{1},'LIMO.mat'))
+load(fullfile(LIMOPath,'LIMO.mat'))
 limo_review(LIMO)
-test = LIMO;
-test.design.weights = zeros(size(LIMO.design.weights));
-test.design.weights(:,LIMO.design.X(:,1)==1) = 1;
-test.design.weights(:,LIMO.design.X(:,2)==1) = 1;
+% test = LIMO;
+% test.design.weights = zeros(size(LIMO.design.weights));
+% test.design.weights(:,LIMO.design.X(:,1)==1) = 1;
+% test.design.weights(:,LIMO.design.X(:,2)==1) = 1;
 % imagesc(test.design.weights)
 
-limo_semi_partial_coef(test); %output dim: channel*time*(R2,F-value,p-value)
+limo_semi_partial_coef(LIMO); %output dim: channel*time*(R2,F-value,p-value)
 
 figure
 % hold on
-test = squeeze(semi_partial_coef(:,:,2));
+test = squeeze(semi_partial_coef(:,:,1));
 plot(LIMO.data.timevect,test')
 [~,idx] = min(abs(LIMO.data.timevect-41.75));
-[~,idx] = min(test(:,idx))
+[~,idx] = min(test(:,idx));
 figure;plot(LIMO.data.timevect,test(idx,:)')
 
 %7 at 248.8; 60 at 41.75; 49 at 412.8
+
+%% Plot partial coef at time of interest
+signif_effect = [];
+for i=1:128
+    cov_effect = load(['D:\__EEG-data\BIDS_files\derivatives\sub-001\eeg\regressed_GLM_OLS_Time_Channels\Covariate_effect_' num2str(i) '.mat']);
+    cov_effect = cov_effect.(cell2mat(fieldnames(cov_effect)));
+    
+    effect = mean(mean(cov_effect([4:12 38:47],179:183,1),1));
+    test = mean(cov_effect([4:12 38:47],179:183,1),1);
+    bar(effect)
+    
+    [elec, time, subj, cov_effect] % bar plot mean, then std
+    
+    if min(TOI)<0.95
+        signif_effect = [signif_effect i];
+%         signif_effect = [signif_effect min(TOI)];
+%         figure();plot(TOI)
+    end
+end
 
 %% Source analysis
 PATH_TO_SOURCE = 'D:\__EEG-data\BIDS_source';
@@ -386,6 +450,7 @@ for i = 1:length(neighbouring_matrix)
 end
 figure()
 imagesc(neighbouring_matrix)
+colormap(gray)
 
 %% Model design
 model.defaults.type = 'Channels'; %or 'Components'
