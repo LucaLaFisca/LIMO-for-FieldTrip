@@ -299,7 +299,7 @@ LIMOPath = limo_random_select('one sample t-test',expected_chanlocs,'LIMOfiles',
 %paired t-test
 cd(PATH_TO_ROOT)
 my_con = 'con1';
-LIMOfiles = {fullfile(pwd,sprintf('%s_files_GLM_OLS_Time_Channels.txt','Beta')); fullfile(pwd,sprintf('%s_files_GLM_OLS_Time_Channels_regressed.txt','Beta'))};
+LIMOfiles = {fullfile(pwd,sprintf('%s_files_GLM_OLS_Time_Channels.txt',my_con)); fullfile(pwd,sprintf('%s_files_GLM_OLS_Time_Channels_regressed.txt',my_con))};
 if ~exist(['paired_t_test_' my_con],'dir')
     mkdir(['paired_t_test_' my_con])
 end
