@@ -237,10 +237,11 @@ contrast.mat = [1 -1 1 -1  1 -1 0 0 0;
 % contrast = load(fullfile(PATH_TO_DERIV,'contrast.mat'));
 % contrast = contrast.contrast;
 
-% cd(PATH_TO_ROOT)
-% [LIMO_files, procstatus] = limo_batch(option,model,contrast);
-option = 'model specification';
-[LIMO_files, procstatus] = limo_batch(option,model);
+cd(PATH_TO_ROOT)
+option = 'both';
+[LIMO_files, procstatus] = limo_batch(option,model,contrast);
+% option = 'model specification';
+% [LIMO_files, procstatus] = limo_batch(option,model);
 % option = 'contrast only';
 % [LIMO_files, procstatus] = limo_batch(option,model,contrast);
 
@@ -299,7 +300,7 @@ LIMOPath = limo_random_select('one sample t-test',expected_chanlocs,'LIMOfiles',
 %paired t-test
 cd(PATH_TO_ROOT)
 my_con = 'con1';
-LIMOfiles = {fullfile(pwd,sprintf('%s_files_GLM_OLS_Time_Channels.txt',my_con)); fullfile(pwd,sprintf('%s_files_GLM_OLS_Time_Channels_regressed.txt',my_con))};
+LIMOfiles = {fullfile(pwd,sprintf('%s_files_GLM_OLS_Time_Channels.txt',my_con)); fullfile(pwd,sprintf('%s_files_GLM_OLS_Time_Channels_simple.txt',my_con))};
 if ~exist(['paired_t_test_' my_con],'dir')
     mkdir(['paired_t_test_' my_con])
 end
@@ -311,6 +312,7 @@ cd(sprintf('paired_t_test_%s',my_con))
 LIMOPath = limo_random_select('paired t-test',expected_chanlocs,'LIMOfiles',... 
     LIMOfiles,'analysis_type','Full scalp analysis',...
     'type','Channels','nboot',100,'tfce',1,'skip design check','yes');
+
 %% display results
 
 load(fullfile(LIMOPath,'LIMO.mat'))
@@ -351,6 +353,38 @@ for i=1:128
 %         figure();plot(TOI)
     end
 end
+
+%% Plot Betas distribution
+group_weight = [];
+for subj = length(model.set_files):-1:1
+    if subj >= 10
+        subfolder = ['sub-0' num2str(subj)];
+    else
+        subfolder = ['sub-00' num2str(subj)];
+    end
+    betas = load(['D:\__EEG-data\BIDS_files\derivatives\' subfolder '\eeg\GLM_OLS_Time_Channels\Betas.mat']);
+    betas = betas.(cell2mat(fieldnames(betas)));
+    
+    weight_eval = squeeze(mean(mean(abs(betas([4:12 38:47],179:183,9:end-1)),1),2));
+    % [weights,idx] = sort(weight_eval,'ascend');
+    % figure;barh(weights)
+    % yticks(1:105)
+    % yticklabels(idx)
+
+    weight_eval = reshape(weight_eval,length(trialinfo.Properties.VariableNames)-3,8);
+    group_weight(:,subj) = mean(weight_eval,2);
+    
+end
+
+mean_weight = mean(group_weight,2);
+[weights,idx] = sort(mean_weight,'ascend');
+
+fields = trialinfo.Properties.VariableNames(4:end);
+for i = 1:length(fields)
+    fields{i} = strrep(fields{i},'_','-');
+end
+figure;barh(weights)
+yticklabels(fields(idx));
 
 %% Source analysis
 PATH_TO_SOURCE = 'D:\__EEG-data\BIDS_source';
