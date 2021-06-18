@@ -2,10 +2,10 @@ function [model] = create_model(PATH_TO_DERIV,PATH_TO_SOURCE,SOURCE_ANALYSIS,tas
 % model is a structure that specifiy information to build a model
 if SOURCE_ANALYSIS
     deriv_path = fullfile(PATH_TO_SOURCE,'derivatives');
-    data_name = [subj '_task-' task_name '_source-roi.mat'];
+    data_name = ['_task-' task_name '_source-roi.mat'];
 else
     deriv_path = PATH_TO_DERIV;
-    data_name = [subj '_task-' task_name '_eeg.mat'];
+    data_name = ['_task-' task_name '_eeg.mat'];
 end
 dinfo = dir(fullfile(deriv_path,'sub-*'));
 model.set_files = {};
@@ -14,7 +14,7 @@ model.cont_files = {};
 i=1;
 for subj = {dinfo.name}
     subj = char(subj);
-    model.set_files{i,1} = fullfile(deriv_path,subj,'eeg',data_name);
+    model.set_files{i,1} = fullfile(deriv_path,subj,'eeg',[subj data_name]);
     eeg = load(fullfile(PATH_TO_DERIV,subj,'eeg',[subj '_task-' task_name '_eeg.mat']));
     eeg = eeg.(cell2mat(fieldnames(eeg)));
     trialinfo = load(fullfile(PATH_TO_DERIV,subj,'eeg',my_trialinfo));
