@@ -4,7 +4,7 @@
 % required data (set to true for the first use of ft2limo)
 CREATE_DERIV                = false;
 CREATE_BIDS                 = false;
-SOURCE_ANALYSIS             = true;
+SOURCE_ANALYSIS             = false;
 ANOVA                       = false;
 T_TEST                      = false;
 PAIRED_T_TEST               = false;
@@ -113,7 +113,7 @@ end
 %  second_regressor_merging, corresponding_value;
 %  nth_regressor_merging, corresponding_value    }
 
-my_contrast = 1; %in this example: nat vs man = 1; semantic vs non semantic = 2; both = 0
+my_contrast = 0; %in this example: nat vs man = 1; semantic vs non semantic = 2; both = 0
 if my_contrast == 0
     % both conditions
     contrast.mat = [1 -1 1 -1  1 -1 0 0 0;
@@ -209,6 +209,110 @@ if PAIRED_T_TEST
         LIMOfiles,'analysis_type','Full scalp analysis',...
         'type','Channels','nboot',100,'tfce',1,'skip design check','yes');
 end
+
+%% Plot covariate influence on time/region of interest
+my_channel = [{'F3'}; {'C1'};{'F4'};{'FCz'}];
+my_time = [143,163;143,163;143,163;143,163];
+target_channel = eeg.label;
+
+timevect = LIMO.data.timevect;
+% [~,start_time] = find(timevect>=my_time(1),1);
+% [~, end_time] = find(timevect<=my_time(2),1,'last');
+
+range_time = [];
+range_channel = [];
+
+for i = 1:size(my_channel,1)
+    range_time = [range_time find((timevect>=my_time(i,1)) & (timevect<=my_time(i,2)))];
+    channel_idx = find(strcmp(target_channel,my_channel(i,:)'));
+    if length(channel_idx) == 1
+        range_channel = [range_channel, channel_idx-1:channel_idx+1];
+    else
+        range_channel = [range_channel, channel_idx];
+    end
+end
+
+group_partial_coef = [];
+i=1;
+for my_path = model.set_files'
+    my_path = char(my_path);
+    [root,~,~] = fileparts(my_path);
+    cd([root '\GLM_OLS_Time_Channels'])
+    LIMO = load('LIMO.mat');
+    LIMO = LIMO.(cell2mat(fieldnames(LIMO)));
+    limo_semi_partial_coef(LIMO); %output dim: channel*time*(R2,F-value,p-value)
+    for j = 1:6
+        semi_partial_coef = load([root '\GLM_OLS_Time_Channels\semi_partial_coef_' num2str(j) '.mat']);
+        semi_partial_coef = semi_partial_coef.(cell2mat(fieldnames(semi_partial_coef)));
+        avg_partial_coef = squeeze(mean(mean(abs(semi_partial_coef(range_channel,range_time,1)),1),2));
+        group_partial_coef(i,j) = avg_partial_coef;
+    end
+    i=i+1;
+end
+
+isout = isoutlier(group_partial_coef,'quartiles');
+xClean = group_partial_coef;
+xClean(isout) = NaN; 
+
+boxplot(xClean)
+
+% %add significance sign
+% significance = [1 2;1 3];
+% figure()
+% boxplot(xClean)
+% yt = get(gca, 'YTick');
+% axis([xlim    0  max(yt)*1.1^size(significance,1)])
+% xt = get(gca, 'XTick');
+% hold on
+% for i = 1:size(significance,1)
+%     plot(xt(significance(i,:)), [1 1]*max(yt)*1.05^i, '-k',  mean(xt(significance(i,:))), max(yt)*(1.05^i+0.02), '*k')
+% end
+% hold off
+
+%% Compare R2 effects 
+%R2 dim: [channels x frames x R2/F/p values]
+
+y1 = [];
+y2 = [];
+i=1;
+for my_path = model.set_files'
+    my_path = char(my_path);
+    [root,~,~] = fileparts(my_path);
+    cd([root '\simple_GLM_OLS_Time_Channels'])
+    load('R2.mat')
+    y1(:,:,i) = R2(:,:,1);
+    cd([root '\GLM_OLS_Time_Channels'])
+    load('R2.mat')
+    y2(:,:,i) = R2(:,:,1);
+    i=i+1;
+end
+load('LIMO.mat')
+cd(PATH_TO_ROOT)
+if ~exist('two_sample_ttest','dir')
+    mkdir two_sample_ttest
+end
+cd two_sample_ttest
+LIMO.dir = pwd;
+LIMO.design.bootstrap = 100;
+LIMO.design.tfce = 1;
+
+test = limo_random_robust(2,y1,y2,[],LIMO);
+
+% imagesc(two_samples(:,:,1))
+cd(PATH_TO_ROOT)
+% LIMOfiles = {fullfile(pwd,sprintf('%s_files_GLM_OLS_Time_Channels.txt','R2')); fullfile(pwd,sprintf('%s_files_GLM_OLS_Time_Channels_simple.txt','R2'))};
+LIMOfiles = {fullfile(pwd,sprintf('%s_files_GLM_OLS_Time_Channels.txt','Beta')); fullfile(pwd,sprintf('%s_files_GLM_OLS_Time_Channels_simple.txt','Beta'))};
+if ~exist('two_sample_ttest','dir')
+    mkdir two_sample_ttest
+end
+cd two_sample_ttest
+
+LIMOPath = limo_random_select('paired t-test',expected_chanlocs,'LIMOfiles',... 
+    LIMOfiles,'analysis_type','Full scalp analysis',...
+    'type','Channels','nboot',100,'tfce',1,'skip design check','yes');
+% LIMOPath = limo_random_select('two-samples t-test',expected_chanlocs,'LIMOfiles',... 
+%     LIMOfiles,'analysis_type','Full scalp analysis',...
+%     'type','Channels','nboot',100,'tfce',1,'skip design check','yes');
 
 %% Plot Betas distribution
 if SOURCE_ANALYSIS
